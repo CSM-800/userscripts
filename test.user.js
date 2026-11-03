@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Test
 // @namespace    https://csm-800.local/
-// @version      v1.0
+// @version      v1.1
 // @description  Test
 // @author       CSM-800, ChatGPT
 // @match        https://www.reddit.com/*
