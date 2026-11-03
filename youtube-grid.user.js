@@ -1,16 +1,16 @@
 // ==UserScript==
 // @name         YouTube Grid
 // @namespace    https://csm-800.local/
-// @version      2.1
+// @version      2.2
 // @description  Stellt die Abos in einem Grid dar.
 // @author       CSM-800, ChatGPT
 // @match        https://m.youtube.com/*
 // @icon         https://www.youtube.com/s/desktop/2253fa3d/img/logos/favicon_144x144.png
 // @grant        none
 // @run-at       document-idle
-// @updateURL    https://github.com/CSM-800/userscript-youtube-grid/raw/refs/heads/main/youtube-grid.user.js
-// @downloadURL  https://github.com/CSM-800/userscript-youtube-grid/raw/refs/heads/main/youtube-grid.user.js
-// @supportURL   https://github.com/CSM-800/userscript-youtube-grid/issues
+// @updateURL    https://raw.githubusercontent.com/CSM-800/userscripts/main/youtube-grid.user.js
+// @downloadURL  https://raw.githubusercontent.com/CSM-800/userscripts/main/youtube-grid.user.js
+// @supportURL   https://github.com/CSM-800/userscripts/issues
 // ==/UserScript==
 
 (() => {
