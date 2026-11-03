@@ -1,13 +1,16 @@
 // ==UserScript==
 // @name         Reddit - Originalbeitrag
 // @namespace    https://csm-800.local/
-// @version      v1.0
+// @version      v1.1
 // @description  Entfernt automatisch den Sprachparameter tl von Reddit-URLs, damit Originalbeiträge angezeigt werden.
 // @author       CSM-800, ChatGPT
 // @match        https://www.reddit.com/*
 // @icon         https://www.redditstatic.com/shreddit/assets/favicon/192x192.png
 // @grant        none
 // @run-at       document-start
+// @updateURL    https://github.com/CSM-800/userscripts/raw/refs/heads/main/reddit-original-language.user.js
+// @downloadURL  https://github.com/CSM-800/userscripts/raw/refs/heads/main/reddit-original-language.user.js
+// @supportURL   https://github.com/CSM-800/userscripts/issues
 // ==/UserScript==
 
 (function () {
