@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         YouTube - Bild im Bild
 // @namespace    https://csm-800.local/
-// @version      1.0
+// @version      1.1
 // @description  Fügt auf YouTube einen Bild-in-Bild-Button hinzu.
 // @author       CSM-800, ChatGPT
-// @match        https://m.youtube.com/watch*
+// @match        https://m.youtube.com/*
 // @icon         https://www.youtube.com/s/desktop/2253fa3d/img/logos/favicon_144x144.png
 // @grant        none
 // @run-at       document-idle
