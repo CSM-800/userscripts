@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Reddit - Originalbeitrag
 // @namespace    https://csm-800.local/
-// @version      v1.2
+// @version      1.3
 // @description  Entfernt automatisch den Sprachparameter tl von Reddit-URLs, damit Originalbeiträge angezeigt werden.
 // @author       CSM-800, ChatGPT
 // @match        https://www.reddit.com/*
