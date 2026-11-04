@@ -4,7 +4,7 @@
 // @version      1.0
 // @description  Fügt auf YouTube einen Bild-in-Bild-Button hinzu.
 // @author       CSM-800, ChatGPT
-// @match        https://m.youtube.com/*
+// @match        https://m.youtube.com/watch*
 // @icon         https://www.youtube.com/s/desktop/2253fa3d/img/logos/favicon_144x144.png
 // @grant        none
 // @run-at       document-idle
