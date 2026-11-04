@@ -8,8 +8,8 @@
 // @icon         https://www.youtube.com/s/desktop/2253fa3d/img/logos/favicon_144x144.png
 // @grant        none
 // @run-at       document-idle
-// @updateURL    https://raw.githubusercontent.com/CSM-800/userscripts/main/youtube-hide-watched-videos.user.js
 // @downloadURL  https://raw.githubusercontent.com/CSM-800/userscripts/main/youtube-hide-watched-videos.user.js
+// @updateURL    https://raw.githubusercontent.com/CSM-800/userscripts/main/youtube-hide-watched-videos.user.js
 // @supportURL   https://github.com/CSM-800/userscripts/issues
 // ==/UserScript==
 
