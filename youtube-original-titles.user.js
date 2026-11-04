@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         YouTube - Original Titel
 // @namespace    https://csm-800.local/
-// @version      1.0
+// @version      1.1
 // @description  Stellt die Originaltitel von YouTube-Videos wieder her.
 // @author       CSM-800, ChatGPT
+// @match        https://www.youtube.com/*
 // @match        https://m.youtube.com/*
 // @icon         https://www.youtube.com/s/desktop/2253fa3d/img/logos/favicon_144x144.png
 // @grant        none
@@ -24,12 +25,7 @@
   let scanAgain = false;
   let lastUrl = location.href;
 
-  function cleanText(value) {
-    return typeof value === "string" && value.trim()
-      ? value.trim()
-      : null;
-  }
-
+  // Video-ID aus normalen Videos und Shorts ermitteln.
   function getVideoId(href) {
     if (!href) return null;
 
@@ -48,6 +44,12 @@
     } catch (_) {}
 
     return null;
+  }
+
+  function cleanText(value) {
+    return typeof value === "string" && value.trim()
+      ? value.trim()
+      : null;
   }
 
   // Originaltitel über YouTube oEmbed abrufen.
@@ -69,6 +71,7 @@
       const data = await response.json();
 
       return cleanText(data.title);
+
     } catch (error) {
       console.warn(
         "[YouTube Original Titles] Titel konnte nicht abgerufen werden:",
@@ -87,6 +90,13 @@
     if (!CACHE.has(videoId)) {
       const request = fetchOriginalTitle(videoId);
       CACHE.set(videoId, request);
+
+      // Fehlgeschlagene Anfragen nicht dauerhaft speichern.
+      request.then(title => {
+        if (!title) {
+          CACHE.delete(videoId);
+        }
+      });
     }
 
     return CACHE.get(videoId);
@@ -105,15 +115,20 @@
 
   // Titelbereich innerhalb einer Videokarte finden.
   function getCardTitleElement(anchor) {
-    return anchor.querySelector(
-      [
-        ".media-item-headline",
-        ".compact-media-item-headline",
-        ".video-title",
-        "h3",
-        "span[role='text']"
-      ].join(", ")
-    ) || anchor;
+    const selectors = [
+      "#video-title",
+      "#video-title-link",
+      ".media-item-headline",
+      ".compact-media-item-headline",
+      ".video-title",
+      "h3"
+    ].join(", ");
+
+    if (anchor.matches(selectors)) {
+      return anchor;
+    }
+
+    return anchor.querySelector(selectors);
   }
 
   async function restoreCardTitle(anchor) {
@@ -138,22 +153,21 @@
       return;
     }
 
-    if (
-      titleElement.getAttribute(TITLE_ATTRIBUTE) === videoId &&
-      titleElement.textContent.trim() === originalTitle
-    ) {
-      return;
-    }
-
     titleElement.textContent = originalTitle;
     titleElement.setAttribute(TITLE_ATTRIBUTE, videoId);
     titleElement.setAttribute("title", originalTitle);
   }
 
-  // Videotitel auf der Videoseite finden.
+  // Titelbereich auf der Videoseite finden.
   function getWatchTitleElement() {
     return document.querySelector(
       [
+        // Desktop
+        "ytd-watch-metadata h1 yt-formatted-string",
+        "ytd-watch-metadata h1",
+        "ytd-video-primary-info-renderer h1",
+
+        // Mobile
         "ytm-slim-video-metadata-section-renderer h1",
         "ytm-video-primary-info-renderer h1",
         "ytm-watch-metadata h1",
@@ -194,6 +208,7 @@
     titleElement.setAttribute("title", originalTitle);
   }
 
+  // Videokarten auf der aktuellen Seite durchsuchen.
   async function scan() {
     if (scanRunning) {
       scanAgain = true;
@@ -209,7 +224,7 @@
         )
       ).filter(isVisible);
 
-      // Begrenzung pro Durchlauf, um unnötige Anfragen zu vermeiden.
+      // Begrenzung pro Durchlauf.
       const visibleAnchors = anchors.slice(0, 30);
 
       await Promise.all(
@@ -240,8 +255,10 @@
   }
 
   function handleNavigation() {
-    if (location.href !== lastUrl) {
-      lastUrl = location.href;
+    const currentUrl = location.href;
+
+    if (currentUrl !== lastUrl) {
+      lastUrl = currentUrl;
     }
 
     scheduleScan(100);
@@ -285,6 +302,7 @@
 
     window.addEventListener("popstate", handleNavigation);
 
+    // Zusätzliche Erkennung von URL-Wechseln.
     setInterval(() => {
       if (location.href !== lastUrl) {
         handleNavigation();
