@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         YouTube - Hide Watched Videos
 // @namespace    https://csm-800.local/
-// @version      1.0
+// @version      1.1
 // @description  Blendet bereits angesehene Videos im Abonnement-Feed aus.
 // @author       CSM-800, ChatGPT
-// @match        https://m.youtube.com/feed/subscriptions*
+// @match        https://m.youtube.com/*
 // @icon         https://www.youtube.com/s/desktop/2253fa3d/img/logos/favicon_144x144.png
 // @grant        none
 // @run-at       document-idle
