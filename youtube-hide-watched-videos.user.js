@@ -4,7 +4,7 @@
 // @version      1.0
 // @description  Blendet bereits angesehene Videos im Abonnement-Feed aus.
 // @author       CSM-800, ChatGPT
-// @match        https://m.youtube.com/*
+// @match        https://m.youtube.com/feed/subscriptions*
 // @icon         https://www.youtube.com/s/desktop/2253fa3d/img/logos/favicon_144x144.png
 // @grant        none
 // @run-at       document-idle
