@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube - Original Titel
 // @namespace    https://csm-800.local/
-// @version      1.1
+// @version      1.2
 // @description  Stellt die Originaltitel von YouTube-Videos wieder her.
 // @author       CSM-800, ChatGPT
 // @match        https://www.youtube.com/*
@@ -15,306 +15,434 @@
 // ==/UserScript==
 
 (() => {
-  "use strict";
+    'use strict';
 
-  const CACHE = new Map();
-  const TITLE_ATTRIBUTE = "data-csm-original-title";
+    const cache = new Map();
+    const queue = [];
+    const activeRequests = new Set();
 
-  let scanTimer = null;
-  let scanRunning = false;
-  let scanAgain = false;
-  let lastUrl = location.href;
+    const MAX_CONCURRENT_REQUESTS = 5;
+    const MAX_ITEMS_PER_SCAN = 50;
 
-  // Video-ID aus normalen Videos und Shorts ermitteln.
-  function getVideoId(href) {
-    if (!href) return null;
+    let scanTimer = null;
+    let lastUrl = location.href;
+    let observer = null;
 
-    try {
-      const url = new URL(href, location.origin);
+    // --------------------------------------------------
+    // Video-ID ermitteln
+    // --------------------------------------------------
 
-      if (url.pathname === "/watch") {
-        return url.searchParams.get("v");
-      }
+    function getVideoId(url) {
+        if (!url) return null;
 
-      const shorts = url.pathname.match(/^\/shorts\/([^/?#]+)/);
+        try {
+            const parsed = new URL(url, location.origin);
 
-      if (shorts) {
-        return shorts[1];
-      }
-    } catch (_) {}
+            if (parsed.pathname === '/watch') {
+                return parsed.searchParams.get('v');
+            }
 
-    return null;
-  }
+            const shortsMatch = parsed.pathname.match(/^\/shorts\/([^/?]+)/);
 
-  function cleanText(value) {
-    return typeof value === "string" && value.trim()
-      ? value.trim()
-      : null;
-  }
+            if (shortsMatch) {
+                return shortsMatch[1];
+            }
 
-  // Originaltitel über YouTube oEmbed abrufen.
-  async function fetchOriginalTitle(videoId) {
-    try {
-      const url =
-        "https://www.youtube.com/oembed?url=" +
-        encodeURIComponent(
-          `https://www.youtube.com/watch?v=${videoId}`
-        ) +
-        "&format=json";
-
-      const response = await fetch(url, {
-        credentials: "omit"
-      });
-
-      if (!response.ok) return null;
-
-      const data = await response.json();
-
-      return cleanText(data.title);
-
-    } catch (error) {
-      console.warn(
-        "[YouTube Original Titles] Titel konnte nicht abgerufen werden:",
-        videoId,
-        error
-      );
-
-      return null;
-    }
-  }
-
-  // Titel mit Cache abrufen.
-  function getOriginalTitle(videoId) {
-    if (!videoId) return Promise.resolve(null);
-
-    if (!CACHE.has(videoId)) {
-      const request = fetchOriginalTitle(videoId);
-      CACHE.set(videoId, request);
-
-      // Fehlgeschlagene Anfragen nicht dauerhaft speichern.
-      request.then(title => {
-        if (!title) {
-          CACHE.delete(videoId);
+        } catch (error) {
+            return null;
         }
-      });
+
+        return null;
     }
 
-    return CACHE.get(videoId);
-  }
+    // --------------------------------------------------
+    // Originaltitel über YouTube oEmbed abrufen
+    // --------------------------------------------------
 
-  function isVisible(element) {
-    if (!element?.isConnected) return false;
+    function getOriginalTitle(videoId) {
+        if (cache.has(videoId)) {
+            return cache.get(videoId);
+        }
 
-    const rect = element.getBoundingClientRect();
+        const promise = new Promise((resolve, reject) => {
+            queue.push({
+                videoId,
+                resolve,
+                reject
+            });
 
-    return rect.width > 0 &&
-      rect.height > 0 &&
-      rect.bottom >= -1000 &&
-      rect.top <= window.innerHeight + 1000;
-  }
+            processQueue();
+        });
 
-  // Titelbereich innerhalb einer Videokarte finden.
-  function getCardTitleElement(anchor) {
-    const selectors = [
-      "#video-title",
-      "#video-title-link",
-      ".media-item-headline",
-      ".compact-media-item-headline",
-      ".video-title",
-      "h3"
-    ].join(", ");
+        cache.set(videoId, promise);
 
-    if (anchor.matches(selectors)) {
-      return anchor;
+        promise.catch(() => {
+            cache.delete(videoId);
+        });
+
+        return promise;
     }
 
-    return anchor.querySelector(selectors);
-  }
+    function processQueue() {
+        while (
+            activeRequests.size < MAX_CONCURRENT_REQUESTS &&
+            queue.length > 0
+        ) {
+            const request = queue.shift();
 
-  async function restoreCardTitle(anchor) {
-    const videoId = getVideoId(anchor.href);
+            activeRequests.add(request);
 
-    if (!videoId) return;
-
-    const titleElement = getCardTitleElement(anchor);
-
-    if (!titleElement || !isVisible(titleElement)) return;
-
-    const originalTitle = await getOriginalTitle(videoId);
-
-    if (!originalTitle) return;
-
-    // Prüfen, ob das Element inzwischen für ein anderes Video
-    // wiederverwendet wurde.
-    if (getVideoId(anchor.href) !== videoId) return;
-
-    if (titleElement.textContent.trim() === originalTitle) {
-      titleElement.setAttribute(TITLE_ATTRIBUTE, videoId);
-      return;
+            fetchOriginalTitle(request)
+                .finally(() => {
+                    activeRequests.delete(request);
+                    processQueue();
+                });
+        }
     }
 
-    titleElement.textContent = originalTitle;
-    titleElement.setAttribute(TITLE_ATTRIBUTE, videoId);
-    titleElement.setAttribute("title", originalTitle);
-  }
+    async function fetchOriginalTitle(request) {
+        const { videoId, resolve, reject } = request;
 
-  // Titelbereich auf der Videoseite finden.
-  function getWatchTitleElement() {
-    return document.querySelector(
-      [
-        // Desktop
-        "ytd-watch-metadata h1 yt-formatted-string",
-        "ytd-watch-metadata h1",
-        "ytd-video-primary-info-renderer h1",
+        try {
+            const videoUrl =
+                `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
 
-        // Mobile
-        "ytm-slim-video-metadata-section-renderer h1",
-        "ytm-video-primary-info-renderer h1",
-        "ytm-watch-metadata h1",
-        "#title h1",
-        "h1.title"
-      ].join(", ")
-    );
-  }
+            const apiUrl =
+                `https://www.youtube.com/oembed?url=${encodeURIComponent(videoUrl)}&format=json`;
 
-  async function restoreWatchTitle() {
-    if (location.pathname !== "/watch") return;
+            const response = await fetch(apiUrl);
 
-    const videoId = new URLSearchParams(location.search).get("v");
+            if (!response.ok) {
+                throw new Error(`oEmbed HTTP ${response.status}`);
+            }
 
-    if (!videoId) return;
+            const data = await response.json();
 
-    const titleElement = getWatchTitleElement();
+            if (!data.title) {
+                throw new Error('Kein Videotitel erhalten');
+            }
 
-    if (!titleElement) return;
+            resolve(data.title);
 
-    const originalTitle = await getOriginalTitle(videoId);
+        } catch (error) {
+            console.warn(
+                '[YouTube Original Titles] Fehler beim Abrufen eines Videotitels:',
+                error
+            );
 
-    if (!originalTitle) return;
-
-    // Navigation während der Anfrage berücksichtigen.
-    if (
-      location.pathname !== "/watch" ||
-      new URLSearchParams(location.search).get("v") !== videoId
-    ) {
-      return;
+            reject(error);
+        }
     }
 
-    if (titleElement.textContent.trim() !== originalTitle) {
-      titleElement.textContent = originalTitle;
+    // --------------------------------------------------
+    // Titel ersetzen
+    // --------------------------------------------------
+
+    function replaceTitle(element, originalTitle) {
+        if (!element || !originalTitle) return;
+
+        // Bereits korrigierten Titel nicht erneut bearbeiten.
+        if (
+            element.getAttribute('data-ytot-applied') === originalTitle
+        ) {
+            return;
+        }
+
+        // Ursprünglichen Titel einmalig sichern.
+        if (!element.hasAttribute('data-ytot-original')) {
+            element.setAttribute(
+                'data-ytot-original',
+                element.textContent.trim()
+            );
+        }
+
+        const displayedTitle =
+            element.getAttribute('data-ytot-original');
+
+        if (!displayedTitle) return;
+
+        // Element als bearbeitet markieren.
+        element.setAttribute('data-ytot-processed', '1');
+
+        const textElement =
+            element.querySelector('[role="text"]') ||
+            element.querySelector('yt-formatted-string') ||
+            element;
+
+        // Text nur ändern, wenn tatsächlich notwendig.
+        if (textElement.textContent.trim() !== originalTitle) {
+            textElement.textContent = originalTitle;
+        }
+
+        // Titelattribute aktualisieren.
+        if (element.hasAttribute('title')) {
+            element.setAttribute('title', originalTitle);
+        }
+
+        const parent = element.parentElement;
+
+        if (parent && parent.hasAttribute('title')) {
+            parent.setAttribute('title', originalTitle);
+        }
+
+        // aria-label aktualisieren.
+        const ariaElements = [
+            element,
+            parent,
+            element.closest('a')
+        ].filter(Boolean);
+
+        for (const ariaElement of ariaElements) {
+            const ariaLabel =
+                ariaElement.getAttribute('aria-label');
+
+            if (!ariaLabel) continue;
+
+            if (ariaLabel.includes(displayedTitle)) {
+                ariaElement.setAttribute(
+                    'aria-label',
+                    ariaLabel.replace(displayedTitle, originalTitle)
+                );
+            }
+        }
+
+        // Bearbeitung abschließen.
+        element.setAttribute('data-ytot-applied', originalTitle);
+
+        // Eigene DOM-Änderungen aus der Observer-Warteschlange entfernen.
+        observer?.takeRecords();
     }
 
-    titleElement.setAttribute(TITLE_ATTRIBUTE, videoId);
-    titleElement.setAttribute("title", originalTitle);
-  }
+    // --------------------------------------------------
+    // Titel eines Elements verarbeiten
+    // --------------------------------------------------
 
-  // Videokarten auf der aktuellen Seite durchsuchen.
-  async function scan() {
-    if (scanRunning) {
-      scanAgain = true;
-      return;
+    async function processTitle(element, videoId) {
+        if (!element || !videoId) return;
+
+        // Bereits korrekt bearbeitete Elemente überspringen.
+        if (element.hasAttribute('data-ytot-applied')) return;
+
+        try {
+            const originalTitle = await getOriginalTitle(videoId);
+
+            if (element.isConnected) {
+                replaceTitle(element, originalTitle);
+            }
+
+        } catch (error) {
+            // Fehler wurden bereits beim Abruf behandelt.
+        }
     }
 
-    scanRunning = true;
+    // --------------------------------------------------
+    // Video-ID für ein Element finden
+    // --------------------------------------------------
 
-    try {
-      const anchors = Array.from(
-        document.querySelectorAll(
-          'a[href*="/watch?v="], a[href*="/shorts/"]'
-        )
-      ).filter(isVisible);
+    function getElementVideoId(element) {
+        if (!element) return null;
 
-      // Begrenzung pro Durchlauf.
-      const visibleAnchors = anchors.slice(0, 30);
+        const directLink = element.closest('a[href]');
 
-      await Promise.all(
-        visibleAnchors.map(restoreCardTitle)
-      );
+        if (directLink) {
+            const id = getVideoId(directLink.href);
+            if (id) return id;
+        }
 
-      await restoreWatchTitle();
+        const container =
+            element.closest(
+                'ytd-rich-item-renderer, ' +
+                'ytd-video-renderer, ' +
+                'ytd-grid-video-renderer, ' +
+                'ytm-video-with-context-renderer, ' +
+                'ytm-compact-video-renderer, ' +
+                'ytm-rich-item-renderer'
+            ) || element.parentElement;
 
-    } finally {
-      scanRunning = false;
+        if (container) {
+            const link = container.querySelector(
+                'a[href*="/watch?v="], a[href*="/shorts/"]'
+            );
+
+            if (link) {
+                return getVideoId(link.href);
+            }
+        }
+
+        return null;
     }
 
-    if (scanAgain) {
-      scanAgain = false;
-      scheduleScan(100);
+    // --------------------------------------------------
+    // Feed-Titel erkennen
+    // --------------------------------------------------
+
+    const CARD_TITLE_SELECTORS = [
+        // Desktop Feed
+        'h3.ytLockupMetadataViewModelHeadingReset',
+        'a.ytLockupMetadataViewModelTitle',
+
+        // Desktop ältere Layouts
+        '#video-title',
+        'a#video-title',
+        'yt-formatted-string#video-title',
+
+        // Desktop weitere Layouts
+        'h3[title] > a > span[role="text"]',
+        'h3 a span',
+
+        // Mobile Feed
+        'h3.media-item-headline',
+        '.media-item-headline',
+
+        // Mobile ältere Layouts
+        '.compact-media-item-headline',
+        '.video-title',
+        'ytm-video-meta-block h3'
+    ];
+
+    function scanFeed() {
+        const elements = document.querySelectorAll(
+            CARD_TITLE_SELECTORS.join(',')
+        );
+
+        let count = 0;
+
+        for (const element of elements) {
+            if (count >= MAX_ITEMS_PER_SCAN) break;
+
+            if (element.hasAttribute('data-ytot-applied')) continue;
+
+            const videoId = getElementVideoId(element);
+
+            if (!videoId) continue;
+
+            processTitle(element, videoId);
+            count++;
+        }
     }
-  }
 
-  function scheduleScan(delay = 250) {
-    if (scanTimer !== null) {
-      clearTimeout(scanTimer);
+    // --------------------------------------------------
+    // Videoseite erkennen
+    // --------------------------------------------------
+
+    const WATCH_TITLE_SELECTORS = [
+        // Desktop Videoseite
+        'ytd-watch-metadata h1 yt-formatted-string',
+        'ytd-watch-metadata h1',
+        'ytd-video-primary-info-renderer h1',
+        'h1.ytd-watch-metadata',
+
+        // Mobile Videoseite
+        'h2.slim-video-information-title .ytAttributedStringHost',
+        'h2.slim-video-information-title',
+
+        // Mobile ältere Layouts
+        'ytm-slim-video-metadata-section-renderer h1',
+        'ytm-video-primary-info-renderer h1',
+        'ytm-watch-metadata h1',
+        '#title h1',
+        'h1.title'
+    ];
+
+    function scanWatchPage() {
+        const videoId = getVideoId(location.href);
+
+        if (!videoId) return;
+
+        const elements = document.querySelectorAll(
+            WATCH_TITLE_SELECTORS.join(',')
+        );
+
+        for (const element of elements) {
+            if (element.hasAttribute('data-ytot-applied')) continue;
+
+            processTitle(element, videoId);
+        }
     }
 
-    scanTimer = setTimeout(() => {
-      scanTimer = null;
-      scan();
-    }, delay);
-  }
+    // --------------------------------------------------
+    // Gesamten Seiteninhalt prüfen
+    // --------------------------------------------------
 
-  function handleNavigation() {
-    const currentUrl = location.href;
-
-    if (currentUrl !== lastUrl) {
-      lastUrl = currentUrl;
+    function scanPage() {
+        scanWatchPage();
+        scanFeed();
     }
 
-    scheduleScan(100);
-    scheduleScan(500);
-    scheduleScan(1200);
-    scheduleScan(2500);
-  }
+    function scheduleScan(delay = 500) {
+        clearTimeout(scanTimer);
 
-  function start() {
-    scheduleScan(100);
+        scanTimer = setTimeout(() => {
+            scanPage();
+        }, delay);
+    }
 
-    const observer = new MutationObserver(() => {
-      scheduleScan();
+    // --------------------------------------------------
+    // YouTube Navigation erkennen
+    // --------------------------------------------------
+
+    document.addEventListener('yt-navigate-finish', () => {
+        scheduleScan(300);
+    });
+
+    document.addEventListener('yt-page-data-updated', () => {
+        scheduleScan(300);
+    });
+
+    window.addEventListener('popstate', () => {
+        scheduleScan(300);
+    });
+
+    // --------------------------------------------------
+    // Änderungen am Seiteninhalt erkennen
+    // --------------------------------------------------
+
+    observer = new MutationObserver((mutations) => {
+        // Nur Änderungen berücksichtigen, die nicht innerhalb
+        // bereits bearbeiteter Titel stattfinden.
+        const relevantChange = mutations.some((mutation) => {
+            const target = mutation.target;
+
+            const element =
+                target.nodeType === Node.ELEMENT_NODE
+                    ? target
+                    : target.parentElement;
+
+            if (
+                element &&
+                element.closest('[data-ytot-processed="1"]')
+            ) {
+                return false;
+            }
+
+            return true;
+        });
+
+        if (relevantChange) {
+            scheduleScan(500);
+        }
     });
 
     observer.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-      characterData: true
+        childList: true,
+        subtree: true
     });
 
-    document.addEventListener(
-      "yt-navigate-start",
-      handleNavigation
-    );
+    // --------------------------------------------------
+    // URL-Überwachung
+    // --------------------------------------------------
 
-    document.addEventListener(
-      "yt-navigate-finish",
-      handleNavigation
-    );
-
-    document.addEventListener(
-      "yt-page-data-updated",
-      handleNavigation
-    );
-
-    document.addEventListener(
-      "yt-player-updated",
-      handleNavigation
-    );
-
-    window.addEventListener("popstate", handleNavigation);
-
-    // Zusätzliche Erkennung von URL-Wechseln.
     setInterval(() => {
-      if (location.href !== lastUrl) {
-        handleNavigation();
-      }
-    }, 500);
-  }
+        if (location.href !== lastUrl) {
+            lastUrl = location.href;
+            scheduleScan(300);
+        }
+    }, 1000);
 
-  if (document.documentElement) {
-    start();
-  } else {
-    document.addEventListener("DOMContentLoaded", start, {
-      once: true
-    });
-  }
+    // --------------------------------------------------
+    // Initialer Start
+    // --------------------------------------------------
+
+    scheduleScan(500);
+
 })();
